@@ -15,7 +15,7 @@ class Config:
     transcript_mime_types: Sequence[str]
     llm_provider: str = "openai"
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.1:8b"
+    ollama_model: str = "mistral:latest"
 
 
 DEFAULT_TRANSCRIPT_MIME_TYPES = [

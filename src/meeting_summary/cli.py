@@ -8,6 +8,7 @@ from .config import load_config
 from .drive_client import DriveClient
 from .manifest import Manifest
 from .ollama_client import OllamaSummarizer
+from .ollama_manager import OllamaManager
 from .openai_client import OpenAISummarizer
 from .service import SummaryService
 
@@ -26,6 +27,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true", help="Do not call LLM or write to Drive")
     parser.add_argument("--force", action="store_true", help="Reprocess even if manifest has entry")
     parser.add_argument("--max-files", type=int, help="Limit number of transcripts processed")
+    parser.add_argument("--start-ollama", action="store_true", help="Start Ollama server if not running")
+    parser.add_argument("--stop-ollama", action="store_true", help="Stop Ollama server after completion")
     return parser
 
 
@@ -49,6 +52,15 @@ def main(argv: list[str] | None = None) -> int:
     creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     if not creds_path and not os.path.exists(token_path):
         raise SystemExit("Set GOOGLE_APPLICATION_CREDENTIALS or provide token.json (or GOOGLE_OAUTH_TOKEN_PATH)")
+
+    # Handle Ollama lifecycle
+    ollama_manager = None
+    if config.llm_provider == "ollama":
+        ollama_manager = OllamaManager(base_url=config.ollama_base_url)
+        should_start = args.start_ollama or args.stop_ollama  # Auto-start if we want to stop later
+        if should_start and not ollama_manager.is_running():
+            if not ollama_manager.start(auto_shutdown=args.stop_ollama):
+                raise SystemExit("Failed to start Ollama server")
 
     drive = DriveClient(credentials_path=creds_path, token_path=token_path)
     if config.llm_provider == "ollama":
