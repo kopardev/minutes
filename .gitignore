@@ -1,5 +1,17 @@
 .venv/
+venv/
+env/
+ENV/
 __pycache__/
 *.pyc
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
 manifest.json
 .env
+export_this_first
+minutes*json
