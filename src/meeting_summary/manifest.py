@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dateutil.parser import isoparse
@@ -57,7 +57,7 @@ class Manifest:
     def mark_processed(self, file: DriveFile, summary_file_id: str) -> None:
         self.items[file.file_id] = ManifestEntry(
             summary_file_id=summary_file_id,
-            processed_at=datetime.utcnow().isoformat() + "Z",
+            processed_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             source_modified_time=file.modified_time,
             source_name=file.name,
         )
