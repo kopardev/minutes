@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -47,7 +48,9 @@ class SummaryService:
                     skipped.append(transcript.name)
                     continue
 
-                summary_name = f"{transcript.name} - Summary.md" if self._config.summary_format == "markdown" else f"{transcript.name} - Summary"
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                ext = ".md" if self._config.summary_format == "markdown" else ""
+                summary_name = f"{transcript.name} - Summary_{timestamp}{ext}"
                 existing = self._drive.find_file_by_name(self._config.dest_folder_id, summary_name)
                 if existing and not force:
                     self._manifest.mark_processed(transcript, existing.get("id", ""))

@@ -13,6 +13,9 @@ class Config:
     summary_format: str
     openai_model: str
     transcript_mime_types: Sequence[str]
+    llm_provider: str = "openai"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.1:8b"
 
 
 DEFAULT_TRANSCRIPT_MIME_TYPES = [
@@ -35,6 +38,9 @@ def load_config(
     summary_format: str | None = None,
     openai_model: str | None = None,
     transcript_mime_types: str | None = None,
+    llm_provider: str | None = None,
+    ollama_base_url: str | None = None,
+    ollama_model: str | None = None,
 ) -> Config:
     source = source_folder_id or os.getenv("TRANSCRIPTS_FOLDER_ID", "")
     dest = dest_folder_id or os.getenv("SUMMARIES_FOLDER_ID", "")
@@ -50,6 +56,12 @@ def load_config(
     fmt = (summary_format or os.getenv("SUMMARY_FORMAT", "markdown")).lower()
     model = openai_model or os.getenv("OPENAI_MODEL", "gpt-5")
     mime_types = _split_csv(transcript_mime_types or os.getenv("TRANSCRIPT_MIME_TYPES"), DEFAULT_TRANSCRIPT_MIME_TYPES)
+    provider = (llm_provider or os.getenv("LLM_PROVIDER", "openai")).lower()
+    if provider not in {"openai", "ollama"}:
+        raise ValueError("LLM_PROVIDER must be one of: openai, ollama")
+
+    ollama_url = ollama_base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    ollama_model_name = ollama_model or os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 
     return Config(
         source_folder_id=source,
@@ -58,4 +70,7 @@ def load_config(
         summary_format=fmt,
         openai_model=model,
         transcript_mime_types=mime_types,
+        llm_provider=provider,
+        ollama_base_url=ollama_url,
+        ollama_model=ollama_model_name,
     )

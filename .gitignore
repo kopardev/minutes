@@ -15,3 +15,5 @@ manifest.json
 .env
 export_this_first
 minutes*json
+client_secret*json
+token.json

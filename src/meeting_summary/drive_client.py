@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import io
+import os
 from dataclasses import dataclass
 from typing import Iterable
 
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials as UserCredentials
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
@@ -11,6 +14,17 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
 GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
 MARKDOWN_MIME = "text/markdown"
+
+
+def _decode_transcript_bytes(data: bytes) -> str:
+    # Many exported transcript files are UTF-16 with BOM. Try common encodings
+    # first, then fallback to replacement so one odd byte does not fail a run.
+    for encoding in ("utf-8-sig", "utf-16", "utf-16-le", "utf-16-be"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
 
 
 @dataclass(frozen=True)
@@ -22,9 +36,20 @@ class DriveFile:
 
 
 class DriveClient:
-    def __init__(self, credentials_path: str):
+    def __init__(self, credentials_path: str | None = None, token_path: str | None = None):
         scopes = ["https://www.googleapis.com/auth/drive"]
-        creds = service_account.Credentials.from_service_account_file(credentials_path, scopes=scopes)
+
+        creds = None
+        if token_path and os.path.exists(token_path):
+            creds = UserCredentials.from_authorized_user_file(token_path, scopes=scopes)
+            if creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+        elif credentials_path:
+            creds = service_account.Credentials.from_service_account_file(credentials_path, scopes=scopes)
+
+        if creds is None:
+            raise ValueError("Provide either token_path (OAuth token.json) or credentials_path (service account JSON)")
+
         self._service = build("drive", "v3", credentials=creds, cache_discovery=False)
 
     def list_files(self, folder_id: str, query_extra: str = "") -> list[dict]:
@@ -73,7 +98,7 @@ class DriveClient:
         done = False
         while not done:
             _, done = downloader.next_chunk()
-        return fh.getvalue().decode("utf-8")
+        return _decode_transcript_bytes(fh.getvalue())
 
     def find_file_by_name(self, folder_id: str, name: str) -> dict | None:
         query_extra = f"name = '{name.replace("'", "\\'")}'"
