@@ -1,7 +1,7 @@
 from meeting_summary.config import Config
 from meeting_summary.drive_client import DriveFile, FakeDriveClient
 from meeting_summary.manifest import Manifest
-from meeting_summary.openai_client import ActionItem, FakeSummarizer, MeetingSummary
+from meeting_summary.summary_schema import ActionItem, FakeSummarizer, MeetingSummary
 from meeting_summary.service import SummaryService
 
 
@@ -21,12 +21,9 @@ def test_service_dry_run(tmp_path):
 
     summary = MeetingSummary(
         title="Meeting 1",
-        overview="Overview",
-        key_outcomes=[],
-        decisions=[],
-        action_items=[ActionItem(owner="", task="Do thing", due_date=None)],
-        risks=[],
-        open_questions=[],
+        overview=["Overview"],
+        key_findings=["Finding"],
+        todos=[ActionItem(owner="", task="Do thing", due_date=None)],
     )
     summarizer = FakeSummarizer(summary)
     manifest = Manifest(config.manifest_path)
@@ -36,7 +33,7 @@ def test_service_dry_run(tmp_path):
 
     assert report.processed == ["Meeting 1"]
     assert drive.created == []
-    assert summarizer.calls == []  # dry-run should not call OpenAI
+    assert summarizer.calls == []  # dry-run should not call summarizer
 
 
 def test_service_processes_and_marks_manifest(tmp_path):
@@ -55,12 +52,9 @@ def test_service_processes_and_marks_manifest(tmp_path):
 
     summary = MeetingSummary(
         title="Meeting 1",
-        overview="Overview",
-        key_outcomes=[],
-        decisions=[],
-        action_items=[ActionItem(owner="", task="Do thing", due_date=None)],
-        risks=[],
-        open_questions=[],
+        overview=["Overview"],
+        key_findings=["Finding"],
+        todos=[ActionItem(owner="", task="Do thing", due_date=None)],
     )
     summarizer = FakeSummarizer(summary)
     manifest = Manifest(config.manifest_path)
@@ -70,6 +64,8 @@ def test_service_processes_and_marks_manifest(tmp_path):
 
     assert report.processed == ["Meeting 1"]
     assert len(drive.created) == 1
+    # Suffix should use source modified_time (2024-01-01T00:00:00Z).
+    assert drive.created[0][1] == "Meeting 1 - Summary_20240101_000000.md"
 
     manifest2 = Manifest(config.manifest_path)
     manifest2.load()

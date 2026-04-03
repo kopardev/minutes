@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .openai_client import MeetingSummary
+from .summary_schema import MeetingSummary
 
 
 def render_markdown(summary: MeetingSummary) -> str:
@@ -8,23 +8,19 @@ def render_markdown(summary: MeetingSummary) -> str:
     lines.append(f"# {summary.title}")
     lines.append("")
     lines.append("## Overview")
-    lines.append(summary.overview or "(No overview provided.)")
+    lines.extend(_render_list(summary.overview))
 
     lines.append("")
-    lines.append("## Key Outcomes")
-    lines.extend(_render_list(summary.key_outcomes))
+    lines.append("## Key Findings")
+    lines.extend(_render_list(summary.key_findings))
 
     lines.append("")
-    lines.append("## Decisions")
-    lines.extend(_render_list(summary.decisions))
-
-    lines.append("")
-    lines.append("## Action Items")
-    if summary.action_items:
-        for item in summary.action_items:
-            owner = item.owner or "Unassigned"
+    lines.append("## Todos")
+    if summary.todos:
+        for item in summary.todos:
+            owner = f" — {item.owner}" if item.owner else ""
             due = f" (Due: {item.due_date})" if item.due_date else ""
-            lines.append(f"- {item.task} — {owner}{due}")
+            lines.append(f"- {item.task}{owner}{due}")
     else:
         lines.append("- None")
 

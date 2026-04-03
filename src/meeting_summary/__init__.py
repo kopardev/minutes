@@ -1,10 +1,12 @@
 __all__ = [
     "config",
     "drive_client",
+    "gemini_summarizer",
     "manifest",
-    "ollama_client",
+    "ollama_summarizer",
     "ollama_manager",
-    "openai_client",
+    "openai_summarizer",
     "service",
+    "summary_schema",
     "summarizer",
 ]
