@@ -1,6 +1,16 @@
-# Meeting Summary Service
+# minutes
 
 Scans a Google Drive folder for meeting transcripts, exports transcript text, sends it to the configured LLM provider (OpenAI, Ollama, or Gemini) for structured extraction, and writes a companion summary file to another Drive folder. A manifest prevents duplicate processing.
+
+## Package
+
+Python package name: `minutes`
+
+Run the CLI as:
+
+```bash
+python -m minutes.cli --dry-run
+```
 
 ## Setup
 
@@ -32,32 +42,39 @@ Set environment variables:
 - `MANIFEST_PATH`: Optional, defaults to `manifest.json`.
 - `TRANSCRIPT_MIME_TYPES`: Optional CSV list of allowed MIME types.
 
+### Output Formats
+
+- `markdown`: Upload `.md` text file.
+- `gdoc`: Upload Google Doc (with formatting when Docs API is enabled).
+- `html`: Render markdown summary to styled `.html` and upload.
+- `pdf`: Render markdown summary to `.pdf` and upload.
+
 ## Run
 
 ```bash
-python -m meeting_summary.cli --dry-run
-python -m meeting_summary.cli
+python -m minutes.cli --dry-run
+python -m minutes.cli
 
 # Fast cloud path (OpenAI)
-python -m meeting_summary.cli --use-openai --model gpt-5
+python -m minutes.cli --use-openai --model gpt-5
 
 # Local path (Ollama)
-python -m meeting_summary.cli --provider ollama --ollama-model qwen3:14b
+python -m minutes.cli --provider ollama --ollama-model qwen3:14b
 
 # Gemini path
-python -m meeting_summary.cli --provider gemini --gemini-model gemini-2.5-pro
+python -m minutes.cli --provider gemini --gemini-model gemini-2.5-pro
 
 # Show live progress logs
-python -m meeting_summary.cli --provider ollama --max-files 3 --verbose
+python -m minutes.cli --provider ollama --max-files 3 --verbose
 
 # Optional: enable chunking (default is single-pass full transcript)
-python -m meeting_summary.cli --provider ollama --use-chunks --max-files 3 --verbose
+python -m minutes.cli --provider ollama --use-chunks --max-files 3 --verbose
 
 # Upload styled HTML summary file
-python -m meeting_summary.cli --provider ollama --format html --max-files 1
+python -m minutes.cli --provider ollama --format html --max-files 1
 
 # Upload PDF summary file
-python -m meeting_summary.cli --provider ollama --format pdf --max-files 1
+python -m minutes.cli --provider ollama --format pdf --max-files 1
 ```
 
 ## Tests
