@@ -11,6 +11,7 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+logs/
 manifest.json
 manifest_cron.json
 .env
