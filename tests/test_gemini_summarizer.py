@@ -4,7 +4,7 @@ import pytest
 from urllib.error import HTTPError
 from urllib.request import Request
 
-from meeting_summary.gemini_summarizer import (
+from minutes.gemini_summarizer import (
     GeminiSummarizer,
     _compute_backoff_seconds,
     _extract_gemini_text,
@@ -88,8 +88,8 @@ def test_request_retries_on_429_then_succeeds(monkeypatch: pytest.MonkeyPatch) -
 
     sleeps: list[int] = []
 
-    monkeypatch.setattr("meeting_summary.gemini_summarizer.request.urlopen", _fake_urlopen)
-    monkeypatch.setattr("meeting_summary.gemini_summarizer.time.sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr("minutes.gemini_summarizer.request.urlopen", _fake_urlopen)
+    monkeypatch.setattr("minutes.gemini_summarizer.time.sleep", lambda s: sleeps.append(s))
 
     out = summarizer._request_with_retry(req=Request(url="https://example.com"))
 

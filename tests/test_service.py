@@ -1,8 +1,8 @@
-from meeting_summary.config import Config
-from meeting_summary.drive_client import DriveFile, FakeDriveClient
-from meeting_summary.manifest import Manifest
-from meeting_summary.summary_schema import ActionItem, FakeSummarizer, MeetingSummary
-from meeting_summary.service import SummaryService
+from minutes.config import Config
+from minutes.drive_client import DriveFile, FakeDriveClient
+from minutes.manifest import Manifest
+from minutes.summary_schema import ActionItem, FakeSummarizer, MeetingSummary
+from minutes.service import SummaryService
 
 
 def test_service_dry_run(tmp_path):

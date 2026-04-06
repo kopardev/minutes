@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
-from meeting_summary.drive_client import DriveFile
-from meeting_summary.manifest import Manifest
+from minutes.drive_client import DriveFile
+from minutes.manifest import Manifest
 
 
 def iso(dt: datetime) -> str:

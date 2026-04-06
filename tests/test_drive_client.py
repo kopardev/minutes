@@ -3,9 +3,9 @@ from types import SimpleNamespace
 import pytest
 from googleapiclient.errors import HttpError
 
-from meeting_summary.drive_client import DriveClient, DriveFile
-from meeting_summary.drive_client import _decode_transcript_bytes, _markdown_to_gdoc_text_and_styles, _markdown_to_html
-from meeting_summary.drive_client import _markdown_to_pdf_bytes
+from minutes.drive_client import DriveClient, DriveFile
+from minutes.drive_client import _decode_transcript_bytes, _markdown_to_gdoc_text_and_styles, _markdown_to_html
+from minutes.drive_client import _markdown_to_pdf_bytes
 
 
 def test_decode_transcript_bytes_utf8() -> None:
@@ -55,8 +55,8 @@ def test_export_text_retries_on_500_then_succeeds(monkeypatch) -> None:
 
     sleeps: list[int] = []
 
-    monkeypatch.setattr("meeting_summary.drive_client.MediaIoBaseDownload", FakeDownloader)
-    monkeypatch.setattr("meeting_summary.drive_client.time.sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr("minutes.drive_client.MediaIoBaseDownload", FakeDownloader)
+    monkeypatch.setattr("minutes.drive_client.time.sleep", lambda seconds: sleeps.append(seconds))
 
     client = object.__new__(DriveClient)
     client._service = FakeService()
@@ -88,7 +88,7 @@ def test_export_text_does_not_retry_non_retryable(monkeypatch) -> None:
             FakeDownloader.calls += 1
             raise _make_http_error(404)
 
-    monkeypatch.setattr("meeting_summary.drive_client.MediaIoBaseDownload", FakeDownloader)
+    monkeypatch.setattr("minutes.drive_client.MediaIoBaseDownload", FakeDownloader)
 
     client = object.__new__(DriveClient)
     client._service = FakeService()

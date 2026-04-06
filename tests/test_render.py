@@ -1,5 +1,5 @@
-from meeting_summary.summary_schema import ActionItem, MeetingSummary
-from meeting_summary.summarizer import render_markdown
+from minutes.summary_schema import ActionItem, MeetingSummary
+from minutes.summarizer import render_markdown
 
 
 def test_render_markdown():

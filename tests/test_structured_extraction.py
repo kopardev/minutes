@@ -1,5 +1,5 @@
-from meeting_summary.summary_schema import MeetingSummary, parse_llm_response, split_transcript
-from meeting_summary.summarizer import render_markdown
+from minutes.summary_schema import MeetingSummary, parse_llm_response, split_transcript
+from minutes.summarizer import render_markdown
 
 
 def test_split_transcript_single_chunk() -> None:

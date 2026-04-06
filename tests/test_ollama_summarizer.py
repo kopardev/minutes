@@ -1,6 +1,6 @@
 import json
 
-from meeting_summary.ollama_summarizer import _parse_json_text
+from minutes.ollama_summarizer import _parse_json_text
 
 
 def test_parse_json_text_plain_json() -> None:
