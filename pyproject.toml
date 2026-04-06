@@ -4,10 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "minutes"
-version = "0.1.0"
+version = "1.0.0"
 description = "Google Drive transcript summarizer"
 readme = "README.md"
 requires-python = ">=3.10"
+
+[project.scripts]
+minutes = "minutes.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

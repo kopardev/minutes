@@ -12,6 +12,7 @@ build/
 .coverage
 htmlcov/
 manifest.json
+manifest_cron.json
 .env
 export_this_first
 minutes*json
