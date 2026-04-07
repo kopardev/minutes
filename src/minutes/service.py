@@ -44,13 +44,14 @@ class SummaryService:
         processed: list[str] = []
         skipped: list[str] = []
         errors: list[str] = []
+        started = 0
 
         logger.info("Listing transcripts from source folder: %s", self._config.source_folder_id)
         transcripts = self._drive.list_transcripts(self._config.source_folder_id)
         candidates = [t for t in transcripts if self._is_supported_mime(t)]
+        logger.info("Found %d supported candidates", len(candidates))
         if max_files is not None:
-            candidates = candidates[:max_files]
-        logger.info("Found %d candidates to process", len(candidates))
+            logger.info("Will process up to %d new transcripts", max_files)
 
         for idx, transcript in enumerate(candidates, start=1):
             try:
@@ -62,13 +63,19 @@ class SummaryService:
 
                 timestamp = _timestamp_from_source(transcript)
                 ext = ".md" if self._config.summary_format == "markdown" else ""
-                summary_name = f"{transcript.name} - Summary_{timestamp}{ext}"
+                summary_name = f"{timestamp}_{transcript.name}{ext}"
                 existing = self._drive.find_file_by_name(self._config.dest_folder_id, summary_name)
                 if existing and not force:
                     self._manifest.mark_processed(transcript, existing.get("id", ""))
                     logger.info("[%d/%d] Skipping (same summary exists): %s", idx, len(candidates), transcript.name)
                     skipped.append(transcript.name)
                     continue
+
+                if max_files is not None and started >= max_files:
+                    logger.info("Reached max_files=%d after %d new transcripts", max_files, started)
+                    break
+
+                started += 1
 
                 if dry_run:
                     logger.info("[%d/%d] Dry run only (not summarizing/uploading): %s", idx, len(candidates), transcript.name)
@@ -108,16 +115,21 @@ class SummaryService:
 
 
 def _timestamp_from_source(transcript: DriveFile) -> str:
-    """Build output suffix timestamp from source file modified_time when possible."""
+    """Build output filename timestamp from source file modified_time when possible.
+    
+    Converts UTC timestamps to local timezone before formatting.
+    """
     value = (transcript.modified_time or "").strip()
     if not value:
         return datetime.now().strftime("%Y%m%d_%H%M%S")
 
     try:
-        # Drive timestamps are RFC3339, often ending with 'Z'.
+        # Drive timestamps are RFC3339, often ending with 'Z' (UTC).
         normalized = value.replace("Z", "+00:00") if value.endswith("Z") else value
-        dt = datetime.fromisoformat(normalized)
-        return dt.strftime("%Y%m%d_%H%M%S")
+        dt_utc = datetime.fromisoformat(normalized)
+        # Convert from UTC to local timezone for the output timestamp.
+        dt_local = dt_utc.astimezone()
+        return dt_local.strftime("%Y%m%d_%H%M%S")
     except ValueError:
         logger.warning("Invalid source modified_time '%s'; falling back to current timestamp", value)
         return datetime.now().strftime("%Y%m%d_%H%M%S")
