@@ -55,7 +55,7 @@ class SummaryService:
 
         for idx, transcript in enumerate(candidates, start=1):
             try:
-                logger.info("[%d/%d] Starting: %s", idx, len(candidates), transcript.name)
+                logger.info("[%d/%d] START %s", idx, len(candidates), transcript.name)
                 if not force and self._manifest.is_processed(transcript):
                     logger.info("[%d/%d] Skipping (already in manifest): %s", idx, len(candidates), transcript.name)
                     skipped.append(transcript.name)
@@ -82,21 +82,55 @@ class SummaryService:
                     processed.append(transcript.name)
                     continue
 
-                logger.info("[%d/%d] Exporting transcript text", idx, len(candidates))
+                logger.info("[%d/%d][STEP 1/4] Downloading transcript from Google Drive", idx, len(candidates))
                 text = self._drive.export_text(transcript)
-                logger.info("[%d/%d] Generating summary via %s", idx, len(candidates), self._config.llm_provider)
+                logger.info(
+                    "[%d/%d][STEP 1/4] Download succeeded: %s chars",
+                    idx,
+                    len(candidates),
+                    len(text),
+                )
+                logger.info(
+                    "[%d/%d][STEP 2/4] Generating summary via %s",
+                    idx,
+                    len(candidates),
+                    self._config.llm_provider,
+                )
                 summary = self._summarizer.summarize(text, transcript.name)
+                logger.info(
+                    "[%d/%d][STEP 2/4] Summary extraction complete: overview=%d findings=%d todos=%d risks=%d questions=%d",
+                    idx,
+                    len(candidates),
+                    len(summary.overview),
+                    len(summary.key_findings),
+                    len(summary.todos),
+                    len(summary.risks),
+                    len(summary.open_questions),
+                )
                 markdown = render_markdown(summary)
+                logger.info(
+                    "[%d/%d][STEP 3/4] Rendered summary markdown: %s chars",
+                    idx,
+                    len(candidates),
+                    len(markdown),
+                )
 
-                logger.info("[%d/%d] Uploading summary: %s", idx, len(candidates), summary_name)
+                logger.info("[%d/%d][STEP 4/4] Uploading summary to Drive: %s", idx, len(candidates), summary_name)
                 created = self._drive.upload_summary(
                     self._config.dest_folder_id,
                     summary_name,
                     markdown,
                     self._config.summary_format,
                 )
+                logger.info(
+                    "[%d/%d][STEP 4/4] Upload succeeded: id=%s name=%s",
+                    idx,
+                    len(candidates),
+                    created.get("id", ""),
+                    created.get("name", summary_name),
+                )
                 self._manifest.mark_processed(transcript, created.get("id", ""))
-                logger.info("[%d/%d] Completed: %s", idx, len(candidates), transcript.name)
+                logger.info("[%d/%d] DONE %s", idx, len(candidates), transcript.name)
                 processed.append(transcript.name)
             except Exception as exc:  # noqa: BLE001
                 logger.exception("[%d/%d] Failed: %s", idx, len(candidates), transcript.name)

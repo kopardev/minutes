@@ -28,31 +28,50 @@ class OllamaSummarizer:
         if not source_text:
             return MeetingSummary(title=title_hint, overview=["Transcript was empty."])
 
-        chunks = split_transcript(source_text) if self._use_chunks else [source_text]
+        if self._use_chunks:
+            chunks = split_transcript(source_text)
+            data = self._extract_from_chunks(chunks, title_hint)
+            return parse_llm_response(data, title_hint)
 
+        logger.info("Ollama: 1 chunk(s) to process for '%s'", title_hint)
+        try:
+            logger.info("Ollama: chunk 1/1 sending to API")
+            data = self._extract(source_text, title_hint, 1, 1)
+            logger.info("Ollama: chunk 1/1 received")
+        except TimeoutError:
+            logger.warning(
+                "Ollama: single-pass request for '%s' timed out after 300s and 600s; retrying with 10 chunks",
+                title_hint,
+            )
+            chunks = _split_into_target_chunks(source_text, 10)
+            data = self._extract_from_chunks(chunks, title_hint)
+
+        return parse_llm_response(data, title_hint)
+
+    def _extract_from_chunks(self, chunks: list[str], title_hint: str) -> dict[str, Any]:
         logger.info("Ollama: %s chunk(s) to process for '%s'", len(chunks), title_hint)
 
         if len(chunks) == 1:
             logger.info("Ollama: chunk 1/1 sending to API")
             data = self._extract(chunks[0], title_hint, 1, 1)
             logger.info("Ollama: chunk 1/1 received")
-        else:
-            # Collect partial extractions per chunk, then consolidate in one final call.
-            partials: list[str] = []
-            for index, chunk in enumerate(chunks, start=1):
-                logger.info("Ollama: chunk %s/%s sending to API", index, len(chunks))
-                partial = self._chat_json(
-                    self._system_prompt(),
-                    self._user_payload(chunk, title_hint, index, len(chunks)),
-                )
-                logger.info("Ollama: chunk %s/%s received", index, len(chunks))
-                partials.append(json.dumps(partial))
-            combined = "\n\n".join(partials)
-            logger.info("Ollama: consolidating %s chunk summaries", len(chunks))
-            data = self._extract(combined, title_hint, 1, 1)
-            logger.info("Ollama: final consolidated response received")
+            return data
 
-        return parse_llm_response(data, title_hint)
+        # Collect partial extractions per chunk, then consolidate in one final call.
+        partials: list[str] = []
+        for index, chunk in enumerate(chunks, start=1):
+            logger.info("Ollama: chunk %s/%s sending to API", index, len(chunks))
+            partial = self._chat_json(
+                self._system_prompt(),
+                self._user_payload(chunk, title_hint, index, len(chunks)),
+            )
+            logger.info("Ollama: chunk %s/%s received", index, len(chunks))
+            partials.append(json.dumps(partial))
+        combined = "\n\n".join(partials)
+        logger.info("Ollama: consolidating %s chunk summaries", len(chunks))
+        data = self._extract(combined, title_hint, 1, 1)
+        logger.info("Ollama: final consolidated response received")
+        return data
 
     def _extract(self, text: str, title_hint: str, chunk_index: int, total_chunks: int) -> dict[str, Any]:
         return self._chat_json(
@@ -119,12 +138,46 @@ class OllamaSummarizer:
             method="POST",
         )
 
-        with request.urlopen(req, timeout=300) as response:  # noqa: S310
-            raw = response.read().decode("utf-8")
+        raw = self._post_with_timeout_retries(req)
+        logger.info("Ollama: raw JSON response received (%s chars)", len(raw))
 
         response_payload = json.loads(raw)
         model_text = str(response_payload.get("message", {}).get("content", "")).strip()
+        logger.info("Ollama: extracted model content (%s chars)", len(model_text))
         return _json_from_text(model_text)
+
+    def _post_with_timeout_retries(self, req: request.Request) -> str:
+        last_exc: TimeoutError | None = None
+        for timeout in (300, 600):
+            try:
+                with request.urlopen(req, timeout=timeout) as response:  # noqa: S310
+                    return response.read().decode("utf-8")
+            except TimeoutError as exc:
+                last_exc = exc
+                if timeout == 300:
+                    logger.warning("Ollama request timed out after 300s; retrying once with 600s")
+                else:
+                    logger.error("Ollama request timed out after 600s")
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("Unreachable timeout retry state")
+
+
+def _split_into_target_chunks(text: str, target_chunks: int) -> list[str]:
+    text = text.strip()
+    if not text:
+        return []
+
+    chunk_count = max(1, min(target_chunks, len(text)))
+    base_size, remainder = divmod(len(text), chunk_count)
+    chunks: list[str] = []
+    start = 0
+    for index in range(chunk_count):
+        size = base_size + (1 if index < remainder else 0)
+        end = start + size
+        chunks.append(text[start:end])
+        start = end
+    return chunks
 
 
 def _parse_json_text(text: str) -> dict:

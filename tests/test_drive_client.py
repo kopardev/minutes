@@ -100,6 +100,69 @@ def test_export_text_does_not_retry_non_retryable(monkeypatch) -> None:
     assert FakeDownloader.calls == 1
 
 
+def test_list_files_retries_on_broken_pipe(monkeypatch) -> None:
+    class FakeExecute:
+        calls = 0
+
+        def execute(self):
+            FakeExecute.calls += 1
+            if FakeExecute.calls == 1:
+                raise BrokenPipeError(32, "Broken pipe")
+            return {"files": [{"id": "1", "name": "doc", "mimeType": "text/plain", "modifiedTime": None}]}
+
+    class FakeFiles:
+        def list(self, **kwargs):
+            return FakeExecute()
+
+    class FakeService:
+        def files(self):
+            return FakeFiles()
+
+    sleeps: list[int] = []
+    monkeypatch.setattr("minutes.drive_client.time.sleep", lambda seconds: sleeps.append(seconds))
+
+    client = object.__new__(DriveClient)
+    client._service = FakeService()
+
+    out = client.list_files("folder")
+
+    assert out[0]["id"] == "1"
+    assert FakeExecute.calls == 2
+    assert sleeps == [1]
+
+
+def test_create_pdf_file_retries_on_broken_pipe(monkeypatch) -> None:
+    class FakeExecute:
+        calls = 0
+
+        def execute(self):
+            FakeExecute.calls += 1
+            if FakeExecute.calls == 1:
+                raise BrokenPipeError(32, "Broken pipe")
+            return {"id": "pdf-1", "name": "summary.pdf"}
+
+    class FakeFiles:
+        def create(self, **kwargs):
+            return FakeExecute()
+
+    class FakeService:
+        def files(self):
+            return FakeFiles()
+
+    sleeps: list[int] = []
+    monkeypatch.setattr("minutes.drive_client.time.sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr("minutes.drive_client._markdown_to_pdf_bytes", lambda _content: b"pdf")
+
+    client = object.__new__(DriveClient)
+    client._service = FakeService()
+
+    out = client.create_pdf_file("folder", "summary", "# Title")
+
+    assert out["id"] == "pdf-1"
+    assert FakeExecute.calls == 2
+    assert sleeps == [1]
+
+
 def test_markdown_to_gdoc_converts_headings_and_bullets() -> None:
     markdown = "# Title\n\n## Overview\n- A\n- B"
     text, requests = _markdown_to_gdoc_text_and_styles(markdown)

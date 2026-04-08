@@ -4,8 +4,11 @@ import html
 import io
 import logging
 import os
+import socket
+import ssl
 import time
 from dataclasses import dataclass
+from typing import Callable
 from typing import Iterable
 
 from google.auth.transport.requests import Request
@@ -22,6 +25,9 @@ HTML_MIME = "text/html"
 PDF_MIME = "application/pdf"
 RETRYABLE_EXPORT_STATUSES = {500, 503}
 MAX_EXPORT_RETRIES = 4
+RETRYABLE_DRIVE_STATUSES = {429, 500, 502, 503, 504}
+MAX_DRIVE_REQUEST_RETRIES = 4
+RETRYABLE_DRIVE_EXCEPTIONS = (BrokenPipeError, ConnectionResetError, TimeoutError, socket.timeout, ssl.SSLEOFError)
 
 
 logger = logging.getLogger(__name__)
@@ -71,15 +77,14 @@ class DriveClient:
         files: list[dict] = []
         page_token = None
         while True:
-            response = (
-                self._service.files()
-                .list(
+            response = self._execute_drive_request(
+                lambda: self._service.files().list(
                     q=query,
                     spaces="drive",
                     fields="nextPageToken, files(id, name, mimeType, modifiedTime)",
                     pageToken=page_token,
-                )
-                .execute()
+                ),
+                description="Drive file listing",
             )
             files.extend(response.get("files", []))
             page_token = response.get("nextPageToken")
@@ -100,6 +105,7 @@ class DriveClient:
         ]
 
     def export_text(self, file: DriveFile) -> str:
+        logger.info("Drive export start: name=%s mime=%s id=%s", file.name, file.mime_type, file.file_id)
         for attempt in range(1, MAX_EXPORT_RETRIES + 1):
             fh = io.BytesIO()
             request = self._build_export_request(file)
@@ -108,7 +114,9 @@ class DriveClient:
             try:
                 while not done:
                     _, done = downloader.next_chunk()
-                return _decode_transcript_bytes(fh.getvalue())
+                text = _decode_transcript_bytes(fh.getvalue())
+                logger.info("Drive export success: name=%s chars=%s", file.name, len(text))
+                return text
             except HttpError as exc:
                 status = getattr(exc.resp, "status", None)
                 is_retryable = status in RETRYABLE_EXPORT_STATUSES
@@ -145,7 +153,10 @@ class DriveClient:
             "mimeType": MARKDOWN_MIME,
         }
         media = MediaIoBaseUpload(io.BytesIO(content.encode("utf-8")), mimetype=MARKDOWN_MIME, resumable=False)
-        return self._service.files().create(body=file_metadata, media_body=media, fields="id, name").execute()
+        return self._execute_drive_request(
+            lambda: self._service.files().create(body=file_metadata, media_body=media, fields="id, name"),
+            description=f"Drive markdown upload for '{name}'",
+        )
 
     def create_html_file(self, folder_id: str, name: str, markdown_content: str) -> dict:
         file_metadata = {
@@ -155,7 +166,10 @@ class DriveClient:
         }
         html_content = _markdown_to_html(markdown_content)
         media = MediaIoBaseUpload(io.BytesIO(html_content.encode("utf-8")), mimetype=HTML_MIME, resumable=False)
-        return self._service.files().create(body=file_metadata, media_body=media, fields="id, name").execute()
+        return self._execute_drive_request(
+            lambda: self._service.files().create(body=file_metadata, media_body=media, fields="id, name"),
+            description=f"Drive HTML upload for '{name}'",
+        )
 
     def create_pdf_file(self, folder_id: str, name: str, markdown_content: str) -> dict:
         file_metadata = {
@@ -163,9 +177,17 @@ class DriveClient:
             "parents": [folder_id],
             "mimeType": PDF_MIME,
         }
+        logger.info("PDF render start: name=%s markdown_chars=%s", name, len(markdown_content))
         pdf_content = _markdown_to_pdf_bytes(markdown_content)
+        logger.info("PDF render success: name=%s pdf_bytes=%s", name, len(pdf_content))
         media = MediaIoBaseUpload(io.BytesIO(pdf_content), mimetype=PDF_MIME, resumable=False)
-        return self._service.files().create(body=file_metadata, media_body=media, fields="id, name").execute()
+        logger.info("Drive PDF upload start: name=%s folder=%s", name, folder_id)
+        created = self._execute_drive_request(
+            lambda: self._service.files().create(body=file_metadata, media_body=media, fields="id, name"),
+            description=f"Drive PDF upload for '{name}'",
+        )
+        logger.info("Drive PDF upload success: id=%s name=%s", created.get("id", ""), created.get("name", ""))
+        return created
 
     def create_google_doc(self, folder_id: str, name: str, content: str) -> dict:
         file_metadata = {
@@ -175,7 +197,10 @@ class DriveClient:
         }
         # Create an empty Google Doc, then insert styled content. This avoids
         # leaving raw markdown in the document body.
-        created = self._service.files().create(body=file_metadata, fields="id, name").execute()
+        created = self._execute_drive_request(
+            lambda: self._service.files().create(body=file_metadata, fields="id, name"),
+            description=f"Google Doc creation for '{name}'",
+        )
         doc_id = created["id"]
 
         # Apply rich formatting so the Google Doc is easier to scan.
@@ -190,6 +215,7 @@ class DriveClient:
         return created
 
     def upload_summary(self, folder_id: str, name: str, content: str, summary_format: str) -> dict:
+        logger.info("Upload routing: format=%s name=%s", summary_format, name)
         if summary_format == "gdoc":
             return self.create_google_doc(folder_id, name, content)
         if summary_format == "html":
@@ -204,24 +230,36 @@ class DriveClient:
             return
 
         # Insert full content first, then apply heading and bullet styles.
-        self._docs_service.documents().batchUpdate(
-            documentId=document_id,
-            body={"requests": [{"insertText": {"location": {"index": 1}, "text": text}}]},
-        ).execute()
+        self._execute_drive_request(
+            lambda: self._docs_service.documents().batchUpdate(
+                documentId=document_id,
+                body={"requests": [{"insertText": {"location": {"index": 1}, "text": text}}]},
+            ),
+            description=f"Google Doc text insert for '{document_id}'",
+        )
 
         if requests:
-            self._docs_service.documents().batchUpdate(documentId=document_id, body={"requests": requests}).execute()
+            self._execute_drive_request(
+                lambda: self._docs_service.documents().batchUpdate(documentId=document_id, body={"requests": requests}),
+                description=f"Google Doc formatting update for '{document_id}'",
+            )
 
     def _insert_plain_doc_text(self, document_id: str, text: str) -> None:
         plain = text if text.endswith("\n") else f"{text}\n"
-        self._docs_service.documents().batchUpdate(
-            documentId=document_id,
-            body={"requests": [{"insertText": {"location": {"index": 1}, "text": plain}}]},
-        ).execute()
+        self._execute_drive_request(
+            lambda: self._docs_service.documents().batchUpdate(
+                documentId=document_id,
+                body={"requests": [{"insertText": {"location": {"index": 1}, "text": plain}}]},
+            ),
+            description=f"Google Doc plain text insert for '{document_id}'",
+        )
 
     def _recreate_google_doc_with_plain_text(self, folder_id: str, name: str, content: str, doc_id: str) -> dict:
         try:
-            self._service.files().delete(fileId=doc_id).execute()
+            self._execute_drive_request(
+                lambda: self._service.files().delete(fileId=doc_id),
+                description=f"Google Doc delete for '{doc_id}'",
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed deleting blank Google Doc '%s' (%s): %s", name, doc_id, exc)
 
@@ -231,7 +269,42 @@ class DriveClient:
             "mimeType": GOOGLE_DOC_MIME,
         }
         media = MediaIoBaseUpload(io.BytesIO(content.encode("utf-8")), mimetype="text/plain", resumable=False)
-        return self._service.files().create(body=file_metadata, media_body=media, fields="id, name").execute()
+        return self._execute_drive_request(
+            lambda: self._service.files().create(body=file_metadata, media_body=media, fields="id, name"),
+            description=f"Google Doc fallback creation for '{name}'",
+        )
+
+    def _execute_drive_request(self, request_factory: Callable[[], object], *, description: str):
+        for attempt in range(1, MAX_DRIVE_REQUEST_RETRIES + 1):
+            try:
+                return request_factory().execute()
+            except HttpError as exc:
+                status = getattr(exc.resp, "status", None)
+                if status not in RETRYABLE_DRIVE_STATUSES or attempt == MAX_DRIVE_REQUEST_RETRIES:
+                    raise
+                backoff_seconds = 2 ** (attempt - 1)
+                logger.warning(
+                    "%s failed with status=%s. Retrying in %ss (attempt %s/%s).",
+                    description,
+                    status,
+                    backoff_seconds,
+                    attempt,
+                    MAX_DRIVE_REQUEST_RETRIES,
+                )
+                time.sleep(backoff_seconds)
+            except RETRYABLE_DRIVE_EXCEPTIONS as exc:
+                if attempt == MAX_DRIVE_REQUEST_RETRIES:
+                    raise
+                backoff_seconds = 2 ** (attempt - 1)
+                logger.warning(
+                    "%s failed with %s. Retrying in %ss (attempt %s/%s).",
+                    description,
+                    exc.__class__.__name__,
+                    backoff_seconds,
+                    attempt,
+                    MAX_DRIVE_REQUEST_RETRIES,
+                )
+                time.sleep(backoff_seconds)
 
 
 def _markdown_to_gdoc_text_and_styles(markdown_text: str) -> tuple[str, list[dict]]:
